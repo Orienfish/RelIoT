@@ -124,6 +124,11 @@ PrintInfo (Ptr<Node> node)
   }
 }
 
+std::string srlocFile = "dev_loc.txt"; // Sensor location file
+std::string gwlocFile = "gw_loc.txt"; // Gateway location file
+std::string flFile = "fl_mat.txt"; // Flow quantity file
+std::string tempFile = "temp.txt"; // Temperature traces at each sensor location
+
 
 int
 main (int argc, char *argv[])
@@ -137,17 +142,17 @@ main (int argc, char *argv[])
   LogComponentEnable ("AppPowerModel", LOG_LEVEL_DEBUG);
   
  
-
+  int nDevices = 0;
+  int nGateways = 0;
   std::string phyMode ("DsssRate1Mbps");
   double Prss = -80;            // dBm
-  uint32_t PpacketSize = 200;   // bytes
+  uint32_t PpacketSize = 100;   // bytes
   bool verbose = false;
-  uint32_t dataSize = 10000;   // bytes
+  uint32_t dataSize = 10000;    // bytes for reliability helper
   // simulation parameters
   uint32_t numPackets = 10000;  // number of packets to send
-  double interval = 1;          // seconds
+  double interval = 10;          // seconds
   double startTime = 0.0;       // seconds
-  double distanceToRx = 100.0;  // meters
   /*
    * This is a magic number used to set the transmit power, based on other
    * configuration.
@@ -161,7 +166,6 @@ main (int argc, char *argv[])
   cmd.AddValue ("numPackets", "Total number of packets to send", numPackets);
   cmd.AddValue ("startTime", "Simulation start time", startTime);
   cmd.AddValue ("distanceToRx", "X-Axis distance between nodes", distanceToRx);
-  cmd.AddValue ("verbose", "Turn on all device log components", verbose);
   cmd.Parse (argc, argv);
 
   // Convert to time object
@@ -178,96 +182,161 @@ main (int argc, char *argv[])
                       StringValue (phyMode));
 
 
-  Ptr<Node> node0 = CreateObject<Node>();
-  Ptr<Node> node1 = CreateObject<Node>();
-  NodeContainer networkNodes = NodeContainer(node0);
-  networkNodes.Add(node1);
+  ///////////////////////////
+  // Create sensor devices //
+  ///////////////////////////
 
-  // The below set of helpers will help us to put together the wifi NICs we want
+  NodeContainer sensorDevices;
+  MobilityHelper mobilityEd;
+  Ptr<ListPositionAllocator> positionAllocEd = CreateObject<ListPositionAllocator> ();
+
+  // Read end nodes' locations from text file
+  std::ifstream EdLocationFile(srlocFile);
+  std::vector<int> SensorFlag;       // Whether the node is a sensor node (1) or a relay node (0)
+  if (EdLocationFile.is_open())
+  {
+    NS_LOG_DEBUG ("Read from existing sensor location file.");
+    std::string line;
+    while (std::getline(EdLocationFile, line)) {
+        if (line.size() > 0) {
+            std::vector < std::string > coordinates = split(line, ' ');
+            double x = atof(coordinates.at(0).c_str());
+            double y = atof(coordinates.at(1).c_str());
+            int Sensor = atof(coordinates.at(2).c_str());
+            positionAllocEd->Add (Vector (x, y, 0.0) );
+            SensorFlag.push_back(Sensor);
+            nDevices ++;
+        }
+    }
+    mobilityEd.SetPositionAllocator (positionAllocEd);
+    mobilityEd.SetMobilityModel ("ns3::ConstantPositionMobilityModel");
+  }
+  else
+  {
+    NS_LOG_ERROR ("Unable to open file " << srlocFile);
+    return -1;
+  }
+
+  sensorDevices.Create (nDevices);
+  mobilityEd.Install (sensorDevices);
+
+  ////////////////
+  // Create GWs //
+  ////////////////
+
+  NodeContainer gateways;
+
+  MobilityHelper mobilityGw;
+  Ptr<ListPositionAllocator> positionAllocGw = CreateObject<ListPositionAllocator> ();
+
+  // Read gateway locations from text file
+  std::ifstream GwLocationFile(gwlocFile);
+  if (GwLocationFile.is_open())
+  {
+    NS_LOG_DEBUG ("Read from existing gw device location file.");
+    std::string line;
+    while (std::getline(GwLocationFile, line)) {
+        if (line.size() > 0) {
+            std::vector < std::string > coordinates = split(line, ' ');
+            double x = atof(coordinates.at(0).c_str());
+            double y = atof(coordinates.at(1).c_str());
+            positionAllocGw->Add (Vector (x, y, 15.0) );
+            nGateways ++;
+        }
+    }
+    mobilityGw.SetPositionAllocator (positionAllocGw);
+    mobilityGw.SetMobilityModel ("ns3::ConstantPositionMobilityModel");
+  }
+  else
+  {
+    NS_LOG_ERROR ("Unable to open file " << gwlocFile);
+    return -1;
+  }
+
+  gateways.Create (nGateways);
+  mobilityGw.Install (gateways);
+
+  NodeContainer allNodes = NodeContainer(sensorDevices, gateways);
+
+
+  ////////////////
+  // Wifi PHY   //
+  ////////////////
+
   WifiHelper wifi;
   if (verbose)
-    {
-      wifi.EnableLogComponents ();
-    }
-  wifi.SetStandard (WIFI_PHY_STANDARD_80211b);
+  {
+    wifi.EnableLogComponents ();  // Turn on all Wifi logging
+  }
 
-  /** Wifi PHY **/
-  /***************************************************************************/
-  YansWifiPhyHelper wifiPhy = YansWifiPhyHelper::Default ();
-  wifiPhy.Set ("RxGain", DoubleValue (-10));
+  YansWifiPhyHelper wifiPhy =  YansWifiPhyHelper::Default ();
+  // set it to zero; otherwise, gain will be added
+  wifiPhy.Set ("RxGain", DoubleValue (-10) );
   wifiPhy.Set ("TxGain", DoubleValue (offset + Prss));
   wifiPhy.Set ("CcaMode1Threshold", DoubleValue (0.0));
-  /***************************************************************************/
+  // ns-3 supports RadioTap and Prism tracing extensions for 802.11b
+  wifiPhy.SetPcapDataLinkType (YansWifiPhyHelper::DLT_IEEE802_11_RADIO);
 
-  /** wifi channel **/
   YansWifiChannelHelper wifiChannel;
   wifiChannel.SetPropagationDelay ("ns3::ConstantSpeedPropagationDelayModel");
   wifiChannel.AddPropagationLoss ("ns3::FriisPropagationLossModel");
-  // create wifi channel
-  Ptr<YansWifiChannel> wifiChannelPtr = wifiChannel.Create ();
-  wifiPhy.SetChannel (wifiChannelPtr);
+  wifiPhy.SetChannel (wifiChannel.Create ());
 
-  /** MAC layer **/
-  // Add a MAC and disable rate control
+  // Add an upper mac and disable rate control
   WifiMacHelper wifiMac;
-  wifi.SetRemoteStationManager ("ns3::ConstantRateWifiManager", "DataMode",
-                                StringValue (phyMode), "ControlMode",
-                                StringValue (phyMode));
-  // Set it to ad-hoc mode
+  wifi.SetStandard (WIFI_PHY_STANDARD_80211b);
+  wifi.SetRemoteStationManager ("ns3::ConstantRateWifiManager",
+                                "DataMode",StringValue (phyMode),
+                                "ControlMode",StringValue (phyMode));
+  // Set it to adhoc mode
   wifiMac.SetType ("ns3::AdhocWifiMac");
 
   /** install PHY + MAC **/
-  //NetDeviceContainer devices = wifi.Install (wifiPhy, wifiMac, networkNodes);
-  NetDeviceContainer device0 = wifi.Install (wifiPhy, wifiMac, node0);
-  NetDeviceContainer device1 = wifi.Install (wifiPhy, wifiMac, node1);
-  NetDeviceContainer devices = NetDeviceContainer(device0, device1);
+  NetDeviceContainer devicesNet = wifi.Install (wifiPhy, wifiMac, sensorDevices);
+  NetDeviceContainer gatewaysNet = wifi.Install (wifiPhy, wifiMac, gateways);
+  NetDeviceContainer allNodesNet = NetDeviceContainer(devicesNet, gatewaysNet);
 
-  /** mobility **/
-  MobilityHelper mobility;
-  Ptr<ListPositionAllocator> positionAlloc = CreateObject<ListPositionAllocator> ();
-  positionAlloc->Add (Vector (0.0, 0.0, 0.0));
-  positionAlloc->Add (Vector (2 * distanceToRx, 0.0, 0.0));
-  mobility.SetPositionAllocator (positionAlloc);
-  mobility.SetMobilityModel ("ns3::ConstantPositionMobilityModel");
-  mobility.Install (networkNodes);
 
   /** Energy Model **/
   /***************************************************************************/
   /* energy source */
-  BasicEnergySourceHelper basicSourceHelper;
+  //BasicEnergySourceHelper basicSourceHelper;
   // configure energy source
-  basicSourceHelper.Set ("BasicEnergySourceInitialEnergyJ", DoubleValue (100000));
+  //basicSourceHelper.Set ("BasicEnergySourceInitialEnergyJ", DoubleValue (100000));
   // install source
-  EnergySourceContainer source1 = basicSourceHelper.Install (node1);
+  //EnergySourceContainer source1 = basicSourceHelper.Install (node1);
   /* reliability stack */
-  ReliabilityHelper reliabilityHelper;
-  reliabilityHelper.SetDeviceType("RaspberryPi");
-  reliabilityHelper.SetPowerModel("ns3::AppPowerModel");
-  reliabilityHelper.SetPerformanceModel("ns3::PerformanceSimpleModel");
-  reliabilityHelper.SetTemperatureModel("ns3::TemperatureSimpleModel");
-  reliabilityHelper.SetReliabilityModel("ns3::ReliabilityTDDBModel");
-  reliabilityHelper.SetApplication("AdaBoost",dataSize,PpacketSize);
-  reliabilityHelper.Install(node1);
+  //ReliabilityHelper reliabilityHelper;
+  //reliabilityHelper.SetDeviceType("RaspberryPi");
+  //reliabilityHelper.SetPowerModel("ns3::AppPowerModel");
+  //reliabilityHelper.SetPerformanceModel("ns3::PerformanceSimpleModel");
+  //reliabilityHelper.SetTemperatureModel("ns3::TemperatureSimpleModel");
+  //reliabilityHelper.SetReliabilityModel("ns3::ReliabilityTDDBModel");
+  //reliabilityHelper.SetApplication("AdaBoost",dataSize,PpacketSize);
+  //reliabilityHelper.Install(node1);
   /* cpu energy model */
-   CpuEnergyModelHelper cpuEnergyHelper;
-   DeviceEnergyModelContainer deviceModels = cpuEnergyHelper.Install(device1, source1);
+  // CpuEnergyModelHelper cpuEnergyHelper;
+  // DeviceEnergyModelContainer deviceModels = cpuEnergyHelper.Install(device1, source1);
   /***************************************************************************/
 
 
   /** Internet stack **/
   InternetStackHelper internet;
-  internet.Install (networkNodes);
+  internet.Install (allNodes);
 
   Ipv4AddressHelper ipv4;
   NS_LOG_INFO ("Assign IP Addresses.");
   ipv4.SetBase ("10.1.1.0", "255.255.255.0");
-  Ipv4InterfaceContainer i = ipv4.Assign (devices);
+  Ipv4InterfaceContainer allNodesInterface = ipv4.Assign (allNodesNet);
 
   TypeId tid = TypeId::LookupByName ("ns3::UdpSocketFactory");
-  Ptr<Socket> recvSink = Socket::CreateSocket (node1, tid);  // node 1, receiver
-  InetSocketAddress local = InetSocketAddress (Ipv4Address::GetAny (), 80);
-  recvSink->Bind (local);
-  recvSink->SetRecvCallback (MakeCallback (&ReceivePacket));
+  for (int i = 0; i < nGateways; ++i)
+  {
+    Ptr<Socket> recvSink = Socket::CreateSocket (gateways.Get(i), tid);  // only one sink
+    InetSocketAddress local = InetSocketAddress (Ipv4Address::GetAny (), 80);
+    recvSink->Bind (local);
+    recvSink->SetRecvCallback (MakeCallback (&ReceivePacket));
+  }
 
   Ptr<Socket> source = Socket::CreateSocket (node0, tid);    // node 0, sender
   InetSocketAddress remote = InetSocketAddress (Ipv4Address::GetBroadcast (), 80);
