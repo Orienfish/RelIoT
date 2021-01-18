@@ -25,6 +25,8 @@
 #include "ns3/energy-module.h"
 #include "ns3/internet-module.h"
 #include "ns3/reliability-module.h"
+#include "ns3/internet-module.h"
+#include "ns3/olsr-helper.h"
 #include <iostream>
 #include <fstream>
 #include <vector>
@@ -52,8 +54,8 @@ ReceivePacket (Ptr<Socket> socket)
         {
           InetSocketAddress iaddr = InetSocketAddress::ConvertFrom (from);
 
-          std::cout << "--\nNode " << socket->GetNode()->GetId();
-          std::cout << " Received one packet from Socket: " << iaddr.GetIpv4 ()
+          std::cout << " Node " << socket->GetNode()->GetId()
+                    << " received one packet from Socket: " << iaddr.GetIpv4 ()
                     << " port: " << iaddr.GetPort ()
                     << " at time = " << Simulator::Now ().GetSeconds ()
                     << std::endl;
@@ -65,7 +67,6 @@ static void SendPacket (Ptr<Socket> socket, uint32_t pktSize, Time pktInterval )
 {
   socket->Send (Create<Packet> (pktSize));
   Simulator::Schedule (pktInterval, &SendPacket, socket, pktSize, pktInterval);
-  std::cout << "Node " << socket->GetNode()->GetId() << " send one packet!" << std::endl;
 }
 
 /// Trace function for remaining energy at node.
@@ -109,27 +110,26 @@ std::string tempFile = "temp.txt"; // Temperature traces at each sensor location
 int
 main (int argc, char *argv[])
 {
-  /*
-  LogComponentEnable ("CpuEnergyModel", LOG_LEVEL_DEBUG);
-  LogComponentEnable ("PowerModel", LOG_LEVEL_DEBUG);
-  LogComponentEnable ("TemperatureSimpleModel", LOG_LEVEL_DEBUG);
-  LogComponentEnable ("ReliabilityTDDBModel", LOG_LEVEL_DEBUG);
-   */
-  LogComponentEnable ("AppPowerModel", LOG_LEVEL_DEBUG);
+  // LogComponentEnable ("CpuEnergyModel", LOG_LEVEL_DEBUG);
+  // LogComponentEnable ("PowerModel", LOG_LEVEL_DEBUG);
+  // LogComponentEnable ("TemperatureSimpleModel", LOG_LEVEL_DEBUG);
+  // LogComponentEnable ("ReliabilityTDDBModel", LOG_LEVEL_DEBUG);
+  // LogComponentEnable ("AppPowerModel", LOG_LEVEL_DEBUG);
   
- 
   uint32_t nDevices = 0;
   uint32_t nGateways = 0;
   std::string phyMode ("DsssRate1Mbps");
   double Prss = -80;            // dBm
   uint32_t PpacketSize = 100;   // bytes
-  bool verbose = false;
   uint32_t dataSize = 10000;    // bytes for reliability helper
   // simulation parameters
   double packetInterval = 5;    // seconds
   double startTime = 0.0;       // seconds
   double simulationTime = 1.0;  // years
   uint32_t port = 5000;         // port number that receiver is listening on
+  bool verbose = false;
+  bool tracing = true;
+
   /*
    * This is a magic number used to set the transmit power, based on other
    * configuration.
@@ -230,9 +230,41 @@ main (int argc, char *argv[])
 
   NodeContainer allNodes = NodeContainer(sensorDevices, gateways);
 
-  ////////////////
-  // Wifi PHY   //
-  ////////////////
+
+  //////////////////////
+  // Read flow matrix //
+  //////////////////////
+  std::ifstream FLFile(flFile);
+  std::vector< std::vector<double> > fij(nDevices); // flow matrix
+  if (FLFile.is_open())
+  {
+    NS_LOG_DEBUG ("Read from existing flow file.");
+    std::string line;
+    int srcIdx = 0;
+    while (std::getline(FLFile, line)) {
+        if (line.size() > 0) {
+            std::vector < std::string > fijLine = split(line, ' ');
+            
+            for (std::vector < std::string >::iterator it = fijLine.begin();
+              it != fijLine.end(); ++it)
+            {
+              double fijVal = atof(it->c_str());
+              fij[srcIdx].push_back(fijVal);
+            }
+            srcIdx ++;
+        }
+    }
+  }
+  else
+  {
+    NS_LOG_ERROR ("Unable to open file " << flFile);
+    return -1;
+  }
+
+
+  ////////////////////////
+  // Wifi Configuration //
+  ////////////////////////
 
   WifiHelper wifi;
   if (verbose)
@@ -267,30 +299,6 @@ main (int argc, char *argv[])
   NetDeviceContainer gatewaysNet = wifi.Install (wifiPhy, wifiMac, gateways);
   NetDeviceContainer allNodesNet = NetDeviceContainer(devicesNet, gatewaysNet);
 
-
-  /** Energy Model **/
-  /***************************************************************************/
-  /* energy source */
-  //BasicEnergySourceHelper basicSourceHelper;
-  // configure energy source
-  //basicSourceHelper.Set ("BasicEnergySourceInitialEnergyJ", DoubleValue (100000));
-  // install source
-  //EnergySourceContainer source1 = basicSourceHelper.Install (node1);
-  /* reliability stack */
-  //ReliabilityHelper reliabilityHelper;
-  //reliabilityHelper.SetDeviceType("RaspberryPi");
-  //reliabilityHelper.SetPowerModel("ns3::AppPowerModel");
-  //reliabilityHelper.SetPerformanceModel("ns3::PerformanceSimpleModel");
-  //reliabilityHelper.SetTemperatureModel("ns3::TemperatureSimpleModel");
-  //reliabilityHelper.SetReliabilityModel("ns3::ReliabilityTDDBModel");
-  //reliabilityHelper.SetApplication("AdaBoost",dataSize,PpacketSize);
-  //reliabilityHelper.Install(node1);
-  /* cpu energy model */
-  // CpuEnergyModelHelper cpuEnergyHelper;
-  // DeviceEnergyModelContainer deviceModels = cpuEnergyHelper.Install(device1, source1);
-  /***************************************************************************/
-
-
   /** Internet stack **/
   InternetStackHelper internet;
   internet.Install (allNodes);
@@ -300,36 +308,9 @@ main (int argc, char *argv[])
   ipv4.SetBase ("10.1.1.0", "255.255.255.0");
   Ipv4InterfaceContainer allNodesInterface = ipv4.Assign (allNodesNet);
 
-  // Read the routing flow from flow file
-  std::ifstream FLFile(flFile);
-  std::vector< std::vector<double> > fij(nDevices); // flow matrix
-  if (FLFile.is_open())
-  {
-    NS_LOG_DEBUG ("Read from existing flow file.");
-    std::string line;
-    int srcIdx = 0;
-    while (std::getline(FLFile, line)) {
-        if (line.size() > 0) {
-            std::vector < std::string > fijLine = split(line, ' ');
-            
-            for (std::vector < std::string >::iterator it = fijLine.begin();
-              it != fijLine.end(); ++it)
-            {
-              double fijVal = atof(it->c_str());
-              fij[srcIdx].push_back(fijVal);
-            }
-            srcIdx ++;
-        }
-    }
-  }
-  else
-  {
-    NS_LOG_ERROR ("Unable to open file " << flFile);
-    return -1;
-  }
-
   // Configure the static routing from the flow matrix
-  Ipv4StaticRoutingHelper ipv4RoutingHelper;
+  Ipv4StaticRoutingHelper staticRouting;
+  internet.SetRoutingHelper (staticRouting); // has effect on the next Install ()
   for (int i = 0; i < nDevices; ++i)
   {
     for (int j = 0; j < nDevices + nGateways; ++j)
@@ -339,7 +320,7 @@ main (int argc, char *argv[])
 
       Ptr<Node>srNode = sensorDevices.Get(i);
       Ptr<Ipv4> ipv4Node = srNode->GetObject<Ipv4> ();
-      Ptr<Ipv4StaticRouting> staticRoutingNode = ipv4RoutingHelper.GetStaticRouting (ipv4Node);
+      Ptr<Ipv4StaticRouting> staticRoutingNode = staticRouting.GetStaticRouting (ipv4Node);
       Ipv4Address sinkAddr = allNodesInterface.GetAddress(nDevices+nGateways-1);
       Ipv4Address nextHopAddr = allNodesInterface.GetAddress(j);
       staticRoutingNode->AddHostRouteTo (sinkAddr, nextHopAddr, 1);
@@ -347,7 +328,6 @@ main (int argc, char *argv[])
       nextHopAddr.Print(std::cout);
     }
   }
-
 
   TypeId tid = TypeId::LookupByName ("ns3::UdpSocketFactory");
   // Configure receiving node - the only sink
@@ -374,6 +354,45 @@ main (int argc, char *argv[])
     }
   }
 
+
+  ////////////////////////////////////////
+  // Power, Temperature and Reliability //
+  ////////////////////////////////////////
+  /** Energy Model **/
+  /***************************************************************************/
+  /* energy source */
+  //BasicEnergySourceHelper basicSourceHelper;
+  // configure energy source
+  //basicSourceHelper.Set ("BasicEnergySourceInitialEnergyJ", DoubleValue (100000));
+  // install source
+  //EnergySourceContainer source1 = basicSourceHelper.Install (node1);
+  /* reliability stack */
+  //ReliabilityHelper reliabilityHelper;
+  //reliabilityHelper.SetDeviceType("RaspberryPi");
+  //reliabilityHelper.SetPowerModel("ns3::AppPowerModel");
+  //reliabilityHelper.SetPerformanceModel("ns3::PerformanceSimpleModel");
+  //reliabilityHelper.SetTemperatureModel("ns3::TemperatureSimpleModel");
+  //reliabilityHelper.SetReliabilityModel("ns3::ReliabilityTDDBModel");
+  //reliabilityHelper.SetApplication("AdaBoost",dataSize,PpacketSize);
+  //reliabilityHelper.Install(node1);
+  /* cpu energy model */
+  // CpuEnergyModelHelper cpuEnergyHelper;
+  // DeviceEnergyModelContainer deviceModels = cpuEnergyHelper.Install(device1, source1);
+  /***************************************************************************/
+
+  if (tracing == true)
+    {
+      AsciiTraceHelper ascii;
+      wifiPhy.EnableAsciiAll (ascii.CreateFileStream ("reliability-example.tr"));
+      wifiPhy.EnablePcap ("reliability-example", allNodes);
+      // Trace routing tables
+      //Ptr<OutputStreamWrapper> routingStream = Create<OutputStreamWrapper> ("wifi-simple-adhoc-grid.routes", std::ios::out);
+      //olsr.PrintRoutingTableAllEvery (Seconds (2), routingStream);
+      //Ptr<OutputStreamWrapper> neighborStream = Create<OutputStreamWrapper> ("wifi-simple-adhoc-grid.neighbors", std::ios::out);
+      //olsr.PrintNeighborCacheAllEvery (Seconds (2), neighborStream);
+
+      // To do-- enable an IP-level trace that shows forwarding events only
+    }
 
   /** simulation setup **/
   // Simulator::Stop (Years (simulationTime));
