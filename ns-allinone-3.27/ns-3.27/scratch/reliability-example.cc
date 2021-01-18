@@ -118,18 +118,18 @@ main (int argc, char *argv[])
   LogComponentEnable ("AppPowerModel", LOG_LEVEL_DEBUG);
   
  
-  int nDevices = 0;
-  int nGateways = 0;
+  uint32_t nDevices = 0;
+  uint32_t nGateways = 0;
   std::string phyMode ("DsssRate1Mbps");
   double Prss = -80;            // dBm
-  // uint32_t PpacketSize = 100;   // bytes
+  uint32_t PpacketSize = 100;   // bytes
   bool verbose = false;
   uint32_t dataSize = 10000;    // bytes for reliability helper
   // simulation parameters
   double packetInterval = 5;    // seconds
   double startTime = 0.0;       // seconds
   double simulationTime = 1.0;  // years
-  int port = 5000;              // port number that receiver is listening on
+  uint32_t port = 5000;         // port number that receiver is listening on
   /*
    * This is a magic number used to set the transmit power, based on other
    * configuration.
@@ -328,8 +328,8 @@ main (int argc, char *argv[])
     return -1;
   }
 
-  // Configure the traffic from the flow matrix
-  TypeId tid = TypeId::LookupByName ("ns3::UdpSocketFactory");
+  // Configure the static routing from the flow matrix
+  Ipv4StaticRoutingHelper ipv4RoutingHelper;
   for (int i = 0; i < nDevices; ++i)
   {
     for (int j = 0; j < nDevices + nGateways; ++j)
@@ -337,26 +337,41 @@ main (int argc, char *argv[])
       if (fij[i][j] < 0.1) // If no flow is assigned, skip this connection
         continue;
 
-      std::cout << fij[i][j] << std::endl;
-      // Configure receiving node
-      Ptr<Socket> recvSink = Socket::CreateSocket (allNodes.Get(j), tid);
-      InetSocketAddress local = InetSocketAddress (allNodesInterface.GetAddress(j), port);
-      recvSink->Bind (local);
-      recvSink->SetRecvCallback (MakeCallback (&ReceivePacket));
+      Ptr<Node>srNode = sensorDevices.Get(i);
+      Ptr<Ipv4> ipv4Node = srNode->GetObject<Ipv4> ();
+      Ptr<Ipv4StaticRouting> staticRoutingNode = ipv4RoutingHelper.GetStaticRouting (ipv4Node);
+      Ipv4Address sinkAddr = allNodesInterface.GetAddress(nDevices+nGateways-1);
+      Ipv4Address nextHopAddr = allNodesInterface.GetAddress(j);
+      staticRoutingNode->AddHostRouteTo (sinkAddr, nextHopAddr, 1);
+      sinkAddr.Print(std::cout);
+      nextHopAddr.Print(std::cout);
+    }
+  }
 
-      // Configure source node
-      Ptr<Socket> source = Socket::CreateSocket (allNodes.Get(i), tid);
-      InetSocketAddress remote = InetSocketAddress (allNodesInterface.GetAddress(j), port);
-      // source->SetAllowBroadcast (true);
+
+  TypeId tid = TypeId::LookupByName ("ns3::UdpSocketFactory");
+  // Configure receiving node - the only sink
+  Ipv4Address sinkAddr = allNodesInterface.GetAddress(nDevices+nGateways-1);
+  Ptr<Socket> recvSocket = Socket::CreateSocket (allNodes.Get(nDevices+nGateways-1), tid);
+  InetSocketAddress local = InetSocketAddress (sinkAddr, port);
+  recvSocket->Bind (local);
+  recvSocket->SetRecvCallback (MakeCallback (&ReceivePacket));
+
+  // Configure source node
+  for (int i = 0; i < nDevices; ++i)
+  {
+    if (SensorFlag[i] > 0)
+    {
+      Ptr<Socket> source = Socket::CreateSocket (sensorDevices.Get(i), tid);
+      InetSocketAddress remote = InetSocketAddress (sinkAddr, port);
       source->Connect (remote);
 
       // Schedule SendPacket
       Simulator::ScheduleWithContext(source->GetNode()->GetId(),
                                      Seconds (startTime), &SendPacket, 
-                                     source, fij[i][j],
+                                     source, PpacketSize,
                                      Seconds(packetInterval));
     }
-    
   }
 
 
