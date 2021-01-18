@@ -266,7 +266,6 @@ main (int argc, char *argv[])
   // Wifi Configuration //
   ////////////////////////
 
-  WifiHelper wifi;
   if (verbose)
   {
     wifi.EnableLogComponents ();  // Turn on all Wifi logging
@@ -285,13 +284,14 @@ main (int argc, char *argv[])
   wifiChannel.AddPropagationLoss ("ns3::FriisPropagationLossModel");
   wifiPhy.SetChannel (wifiChannel.Create ());
 
-  // Add an upper mac and disable rate control
-  WifiMacHelper wifiMac;
+  // Disable rate control
+  WifiHelper wifi;
   wifi.SetStandard (WIFI_PHY_STANDARD_80211b);
   wifi.SetRemoteStationManager ("ns3::ConstantRateWifiManager",
                                 "DataMode",StringValue (phyMode),
                                 "ControlMode",StringValue (phyMode));
   // Set it to adhoc mode
+  WifiMacHelper wifiMac;
   wifiMac.SetType ("ns3::AdhocWifiMac");
 
   /** install PHY + MAC **/
