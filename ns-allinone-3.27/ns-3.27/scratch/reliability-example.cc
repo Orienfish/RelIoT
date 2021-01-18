@@ -34,19 +34,7 @@ using namespace ns3;
 
 NS_LOG_COMPONENT_DEFINE ("ReliabilityExample");
 
-static inline std::string
-PrintReceivedPacket (Address& from)
-{
-  InetSocketAddress iaddr = InetSocketAddress::ConvertFrom (from);
-
-  std::ostringstream oss;
-  oss << "--\nReceived one packet! Socket: " << iaddr.GetIpv4 ()
-      << " port: " << iaddr.GetPort ()
-      << " at time = " << Simulator::Now ().GetSeconds ()
-      << "\n--";
-
-  return oss.str ();
-}
+std::vector < std::string > split(std::string const & str, const char delim);
 
 /**
  * \param socket Pointer to socket.
@@ -62,34 +50,22 @@ ReceivePacket (Ptr<Socket> socket)
     {
       if (packet->GetSize () > 0)
         {
-          NS_LOG_UNCOND (PrintReceivedPacket (from));
+          InetSocketAddress iaddr = InetSocketAddress::ConvertFrom (from);
+
+          std::cout << "--\nNode " << socket->GetNode()->GetId();
+          std::cout << " Received one packet from Socket: " << iaddr.GetIpv4 ()
+                    << " port: " << iaddr.GetPort ()
+                    << " at time = " << Simulator::Now ().GetSeconds ()
+                    << std::endl;
         }
     }
 }
 
-/**
- * \param socket Pointer to socket.
- * \param pktSize Packet size.
- * \param n Pointer to node.
- * \param pktCount Number of packets to generate.
- * \param pktInterval Packet sending interval.
- *
- * Traffic generator.
- */
-static void
-GenerateTraffic (Ptr<Socket> socket, uint32_t pktSize, Ptr<Node> n,
-                 uint32_t pktCount, Time pktInterval)
+static void SendPacket (Ptr<Socket> socket, uint32_t pktSize, Time pktInterval ) 
 {
-  if (pktCount > 0)
-    {
-      socket->Send (Create<Packet> (pktSize));
-      Simulator::Schedule (pktInterval, &GenerateTraffic, socket, pktSize, n,
-                           pktCount - 1, pktInterval);
-    }
-  else
-    {
-      socket->Close ();
-    }
+  socket->Send (Create<Packet> (pktSize));
+  Simulator::Schedule (pktInterval, &SendPacket, socket, pktSize, pktInterval);
+  std::cout << "Node " << socket->GetNode()->GetId() << " send one packet!" << std::endl;
 }
 
 /// Trace function for remaining energy at node.
@@ -112,7 +88,7 @@ void
 PrintInfo (Ptr<Node> node)
 {
 
-  std::cout<<"At time "<< Simulator::Now().GetSeconds()<<", NodeId = "<<node->GetId();
+  std::cout << " At time "<< Simulator::Now().GetSeconds()<<", NodeId = "<<node->GetId();
   std::cout << " CPU Power = " << node->GetObject<PowerModel>()->GetPower();
   std::cout << " Performance = " << node->GetObject<PerformanceModel>()->GetThroughput();
   std::cout << " Temperature = " << node->GetObject<TemperatureModel>()->GetTemperature()<<std::endl;
@@ -146,13 +122,14 @@ main (int argc, char *argv[])
   int nGateways = 0;
   std::string phyMode ("DsssRate1Mbps");
   double Prss = -80;            // dBm
-  uint32_t PpacketSize = 100;   // bytes
+  // uint32_t PpacketSize = 100;   // bytes
   bool verbose = false;
   uint32_t dataSize = 10000;    // bytes for reliability helper
   // simulation parameters
-  uint32_t numPackets = 10000;  // number of packets to send
-  double interval = 10;          // seconds
+  double packetInterval = 5;    // seconds
   double startTime = 0.0;       // seconds
+  double simulationTime = 1.0;  // years
+  int port = 5000;              // port number that receiver is listening on
   /*
    * This is a magic number used to set the transmit power, based on other
    * configuration.
@@ -162,14 +139,9 @@ main (int argc, char *argv[])
   CommandLine cmd;
   cmd.AddValue ("phyMode", "Wifi Phy mode", phyMode);
   cmd.AddValue ("Prss", "Intended primary RSS (dBm)", Prss);
-  cmd.AddValue ("PpacketSize", "size of application packet sent", PpacketSize);
-  cmd.AddValue ("numPackets", "Total number of packets to send", numPackets);
+  // cmd.AddValue ("PpacketSize", "size of application packet sent", PpacketSize);
   cmd.AddValue ("startTime", "Simulation start time", startTime);
-  cmd.AddValue ("distanceToRx", "X-Axis distance between nodes", distanceToRx);
   cmd.Parse (argc, argv);
-
-  // Convert to time object
-  Time interPacketInterval = Seconds (interval);
 
   // disable fragmentation for frames below 2200 bytes
   Config::SetDefault ("ns3::WifiRemoteStationManager::FragmentationThreshold",
@@ -258,7 +230,6 @@ main (int argc, char *argv[])
 
   NodeContainer allNodes = NodeContainer(sensorDevices, gateways);
 
-
   ////////////////
   // Wifi PHY   //
   ////////////////
@@ -329,32 +300,86 @@ main (int argc, char *argv[])
   ipv4.SetBase ("10.1.1.0", "255.255.255.0");
   Ipv4InterfaceContainer allNodesInterface = ipv4.Assign (allNodesNet);
 
-  TypeId tid = TypeId::LookupByName ("ns3::UdpSocketFactory");
-  for (int i = 0; i < nGateways; ++i)
+  // Read the routing flow from flow file
+  std::ifstream FLFile(flFile);
+  std::vector< std::vector<double> > fij(nDevices); // flow matrix
+  if (FLFile.is_open())
   {
-    Ptr<Socket> recvSink = Socket::CreateSocket (gateways.Get(i), tid);  // only one sink
-    InetSocketAddress local = InetSocketAddress (Ipv4Address::GetAny (), 80);
-    recvSink->Bind (local);
-    recvSink->SetRecvCallback (MakeCallback (&ReceivePacket));
+    NS_LOG_DEBUG ("Read from existing flow file.");
+    std::string line;
+    int srcIdx = 0;
+    while (std::getline(FLFile, line)) {
+        if (line.size() > 0) {
+            std::vector < std::string > fijLine = split(line, ' ');
+            
+            for (std::vector < std::string >::iterator it = fijLine.begin();
+              it != fijLine.end(); ++it)
+            {
+              double fijVal = atof(it->c_str());
+              fij[srcIdx].push_back(fijVal);
+            }
+            srcIdx ++;
+        }
+    }
+  }
+  else
+  {
+    NS_LOG_ERROR ("Unable to open file " << flFile);
+    return -1;
   }
 
-  Ptr<Socket> source = Socket::CreateSocket (node0, tid);    // node 0, sender
-  InetSocketAddress remote = InetSocketAddress (Ipv4Address::GetBroadcast (), 80);
-  source->SetAllowBroadcast (true);
-  source->Connect (remote);
+  // Configure the traffic from the flow matrix
+  TypeId tid = TypeId::LookupByName ("ns3::UdpSocketFactory");
+  for (int i = 0; i < nDevices; ++i)
+  {
+    for (int j = 0; j < nDevices + nGateways; ++j)
+    {
+      if (fij[i][j] < 0.1) // If no flow is assigned, skip this connection
+        continue;
 
+      std::cout << fij[i][j] << std::endl;
+      // Configure receiving node
+      Ptr<Socket> recvSink = Socket::CreateSocket (allNodes.Get(j), tid);
+      InetSocketAddress local = InetSocketAddress (allNodesInterface.GetAddress(j), port);
+      recvSink->Bind (local);
+      recvSink->SetRecvCallback (MakeCallback (&ReceivePacket));
 
-  PrintInfo (node1);
+      // Configure source node
+      Ptr<Socket> source = Socket::CreateSocket (allNodes.Get(i), tid);
+      InetSocketAddress remote = InetSocketAddress (allNodesInterface.GetAddress(j), port);
+      // source->SetAllowBroadcast (true);
+      source->Connect (remote);
+
+      // Schedule SendPacket
+      Simulator::ScheduleWithContext(source->GetNode()->GetId(),
+                                     Seconds (startTime), &SendPacket, 
+                                     source, fij[i][j],
+                                     Seconds(packetInterval));
+    }
+    
+  }
 
 
   /** simulation setup **/
-  // start traffic
-  Simulator::Schedule (Seconds (startTime), &GenerateTraffic, source, PpacketSize,
-                       networkNodes.Get (0), numPackets, interPacketInterval);
-
-  Simulator::Stop (Seconds (100.0));
+  // Simulator::Stop (Years (simulationTime));
+  Simulator::Stop (Seconds (100));
   Simulator::Run ();
   Simulator::Destroy ();
 
   return 0;
+}
+
+// split implementation for reading from external text files
+std::vector < std::string > split(std::string const & str, const char delim)
+{
+    std::vector < std::string > result;
+
+    std::stringstream ss(str);
+    std::string s;
+
+    while (std::getline(ss, s, delim)) {
+        result.push_back(s);
+    }
+
+    return result;
 }
