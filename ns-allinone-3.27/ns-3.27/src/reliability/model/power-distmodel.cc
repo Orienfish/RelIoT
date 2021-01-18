@@ -41,10 +41,10 @@ NS_OBJECT_ENSURE_REGISTERED (PowerDistModel);
 TypeId
 PowerDistModel::GetTypeId (void)
 {
-  static TypeId tid = TypeId ("ns3::PowerLinearModel")
+  static TypeId tid = TypeId ("ns3::PowerDistModel")
     .SetParent<PowerModel> ()
     .SetGroupName ("Power")
-    .AddConstructor<PowerLinearModel> ()
+    .AddConstructor<PowerDistModel> ()
     .AddAttribute ("IdlePowerW",
                    "Idle Power Consumption of Cpu in W",
                    DoubleValue (2.8),    // default

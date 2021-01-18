@@ -31,6 +31,7 @@
 #include <fstream>
 #include <vector>
 #include <string>
+#include <math.h>
 
 using namespace ns3;
 
@@ -120,9 +121,20 @@ main (int argc, char *argv[])
   uint32_t nGateways = 0;
   std::string phyMode ("DsssRate1Mbps");
   double Prss = -80;            // dBm
-  uint32_t PpacketSize = 100;   // bytes
-  uint32_t dataSize = 10000;    // bytes for reliability helper
-  // simulation parameters
+  uint32_t packetSize = 100;   // bytes
+  double bw = 2000.0;             // B/s
+  // uint32_t dataSize = 10000;    // bytes for reliability helper
+
+  // Energy parameters
+  double Es = 0.04;             // J, energy for one sensing sample
+  double P0 = 0.01;             // W, ambient power dissipation
+  double Pto = 0.22;            // W, ambient wifi transmission power
+  double alpha = 3.5;           // Path exponent
+  double beta = 0.0000001;      // Path linear coefficient
+  double Prx = 0.1;             // W, wifi receiption power
+  double BattJ = 23760;         // J, battery capacity
+
+  // Simulation parameters
   double packetInterval = 5;    // seconds
   double startTime = 0.0;       // seconds
   double simulationTime = 1.0;  // years
@@ -139,7 +151,7 @@ main (int argc, char *argv[])
   CommandLine cmd;
   cmd.AddValue ("phyMode", "Wifi Phy mode", phyMode);
   cmd.AddValue ("Prss", "Intended primary RSS (dBm)", Prss);
-  // cmd.AddValue ("PpacketSize", "size of application packet sent", PpacketSize);
+  cmd.AddValue ("packetSize", "size of application packet sent", packetSize);
   cmd.AddValue ("startTime", "Simulation start time", startTime);
   cmd.Parse (argc, argv);
 
@@ -349,7 +361,7 @@ main (int argc, char *argv[])
       // Schedule SendPacket
       Simulator::ScheduleWithContext(source->GetNode()->GetId(),
                                      Seconds (startTime), &SendPacket,
-                                     source, PpacketSize,
+                                     source, packetSize,
                                      Seconds(packetInterval));
     }
   }
@@ -360,26 +372,38 @@ main (int argc, char *argv[])
   ////////////////////////////////////////
   /** Energy Model **/
   /***************************************************************************/
-  /* energy source */
-  //BasicEnergySourceHelper basicSourceHelper;
-  // configure energy source
-  //basicSourceHelper.Set ("BasicEnergySourceInitialEnergyJ", DoubleValue (100000));
-  // install source
-  //EnergySourceContainer source1 = basicSourceHelper.Install (node1);
-  /* reliability stack */
-  //ReliabilityHelper reliabilityHelper;
-  //reliabilityHelper.SetDeviceType("RaspberryPi");
-  //reliabilityHelper.SetPowerModel("ns3::AppPowerModel");
-  //reliabilityHelper.SetPerformanceModel("ns3::PerformanceSimpleModel");
-  //reliabilityHelper.SetTemperatureModel("ns3::TemperatureSimpleModel");
-  //reliabilityHelper.SetReliabilityModel("ns3::ReliabilityTDDBModel");
-  //reliabilityHelper.SetApplication("AdaBoost",dataSize,PpacketSize);
-  //reliabilityHelper.Install(node1);
+  /* Energy source */
+  BasicEnergySourceHelper basicSourceHelper;
+  // Configure energy source
+  basicSourceHelper.Set ("BasicEnergySourceInitialEnergyJ", Double (BattJ));
+  basicSourceHelper.Set ("BasicEnergySupplyVoltageV", DoubleValue (3.3));
+  // Install source
+  EnergySourceContainer energySources = basicSourceHelper.Install (sensorDevices);
+  /* Reliability stack */
+  ReliabilityHelper reliabilityHelper;
+  // Configure the power, temperature and reliability model for each node
+  for (int i = 0; i < nDevices; ++i)
+  {
+    nodei = sensorDevices.Get(i);
+    reliabilityHelper.SetDeviceType("Arduino");
+    reliabilityHelper.SetPowerModel("ns3::PowerDistModel",
+      "IdlePower", DoubleValue (P0 + SensorFlag[i] * Es / packetInterval), 
+      "TxPowerW", DoubleValue(Pto + beta * power(dist[i], alpha)),
+      "TxDurationS", DoubleValue(packetSize / bw),
+      "RxPowerW", DoubleValue(Prx),
+      "RxDurationS", DoubleValue(packetSize / bw));
+    reliabilityHelper.SetPerformanceModel("ns3::PerformanceSimpleModel");
+    reliabilityHelper.SetTemperatureModel("ns3::TemperatureSimpleModel");
+    reliabilityHelper.SetReliabilityModel("ns3::ReliabilityTDDBModel");
+    reliabilityHelper.SetApplication("AdaBoost",dataSize,packetSize);
+    reliabilityHelper.Install(nodei);
+  }
+  
   /* cpu energy model */
-  // CpuEnergyModelHelper cpuEnergyHelper;
-  // DeviceEnergyModelContainer deviceModels = cpuEnergyHelper.Install(device1, source1);
-  /***************************************************************************/
+  CpuEnergyModelHelper cpuEnergyHelper;
+  DeviceEnergyModelContainer deviceModels = cpuEnergyHelper.Install(sensorDevices, energySources);
 
+  /***************************************************************************/
   if (tracing == true)
   {
     AsciiTraceHelper ascii;

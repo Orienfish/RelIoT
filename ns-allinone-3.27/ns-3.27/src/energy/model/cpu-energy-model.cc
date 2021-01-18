@@ -65,8 +65,6 @@ CpuEnergyModel::CpuEnergyModel ()
   m_isSupersededChangeState = false;
   m_energyDepletionCallback.Nullify ();
   m_cpuAppRunCallback.Nullify ();
-  m_count = 0;
-  m_numberOfPackets = 0;
   m_source = NULL;
   m_powerModel = NULL;
   // set callback for WifiPhy listener
@@ -205,25 +203,10 @@ CpuEnergyModel::ChangeState (int newState)
       energyToDecrease = duration.GetSeconds () * m_idlePowerW;
       break;
     case WifiPhy::TX:
-      energyToDecrease = duration.GetSeconds () * m_idlePowerW;
+      energyToDecrease = m_powerModel->GetTxDurationS() * m_powerModel->GetTxPowerW();
       break;
     case WifiPhy::RX:
-      m_count += 1;
-      if(m_count>=m_numberOfPackets){
-      if (m_powerModel->GetState()==0)
-        {
-          NS_LOG_DEBUG ("CpuEnergyModel:Running app" <<
-                          " at time = " << Simulator::Now ());
-          m_powerModel->RunApp();
-          //energyToDecrease = m_powerModel->GetEnergy();
-          energyToDecrease = duration.GetSeconds () * m_powerModel->GetPower();
-        } else {
-          NS_LOG_DEBUG ("CpuEnergyModel: BUSY, an app is still running" <<
-                          " at time = " << Simulator::Now ());        
-          energyToDecrease = 0;
-        }
-      m_count = 0;
-      }
+      energyToDecrease = m_powerModel->GetRxDurationS() * m_powerModel->GetRxPowerW();
       break;
     case WifiPhy::SWITCHING:
       energyToDecrease = duration.GetSeconds () * m_idlePowerW;
@@ -257,6 +240,8 @@ CpuEnergyModel::ChangeState (int newState)
     {
       // update current state & last update time stamp
       SetWifiRadioState ((WifiPhy::State) newState);
+      m_powerModel->SetState(newState);
+      m_powerModel->UpdatePower();
 
       // some debug message
       NS_LOG_DEBUG ("CpuEnergyModel:Total energy consumption is " <<
@@ -354,9 +339,9 @@ CpuEnergyModel::DoGetPower (void) const
     case WifiPhy::CCA_BUSY:
       return m_idlePowerW;
     case WifiPhy::TX:
-      return m_idlePowerW;
+      return m_powerModel->GetTxPowerW();
     case WifiPhy::RX:
-      return m_idlePowerW;
+      return m_powerModel->GetRxPowerW();
     case WifiPhy::SWITCHING:
       return m_idlePowerW;
     case WifiPhy::SLEEP:

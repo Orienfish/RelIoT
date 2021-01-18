@@ -1,0 +1,12 @@
+*.o
+*netanim*
+*build*
+*Makefile*
+*.cpp
+*waf*
+*__pycache__*
+*.pyc
+*.txt
+*.pcap
+*.tr
+
