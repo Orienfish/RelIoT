@@ -63,7 +63,7 @@ ReceivePacket (Ptr<Socket> socket)
     }
 }
 
-static void SendPacket (Ptr<Socket> socket, uint32_t pktSize, Time pktInterval ) 
+static void SendPacket (Ptr<Socket> socket, uint32_t pktSize, Time pktInterval )
 {
   socket->Send (Create<Packet> (pktSize));
   Simulator::Schedule (pktInterval, &SendPacket, socket, pktSize, pktInterval);
@@ -115,7 +115,7 @@ main (int argc, char *argv[])
   // LogComponentEnable ("TemperatureSimpleModel", LOG_LEVEL_DEBUG);
   // LogComponentEnable ("ReliabilityTDDBModel", LOG_LEVEL_DEBUG);
   // LogComponentEnable ("AppPowerModel", LOG_LEVEL_DEBUG);
-  
+
   uint32_t nDevices = 0;
   uint32_t nGateways = 0;
   std::string phyMode ("DsssRate1Mbps");
@@ -128,7 +128,7 @@ main (int argc, char *argv[])
   double simulationTime = 1.0;  // years
   uint32_t port = 5000;         // port number that receiver is listening on
   bool verbose = false;
-  bool tracing = true;
+  bool tracing = false;
 
   /*
    * This is a magic number used to set the transmit power, based on other
@@ -244,7 +244,7 @@ main (int argc, char *argv[])
     while (std::getline(FLFile, line)) {
         if (line.size() > 0) {
             std::vector < std::string > fijLine = split(line, ' ');
-            
+
             for (std::vector < std::string >::iterator it = fijLine.begin();
               it != fijLine.end(); ++it)
             {
@@ -348,7 +348,7 @@ main (int argc, char *argv[])
 
       // Schedule SendPacket
       Simulator::ScheduleWithContext(source->GetNode()->GetId(),
-                                     Seconds (startTime), &SendPacket, 
+                                     Seconds (startTime), &SendPacket,
                                      source, PpacketSize,
                                      Seconds(packetInterval));
     }
@@ -381,18 +381,11 @@ main (int argc, char *argv[])
   /***************************************************************************/
 
   if (tracing == true)
-    {
-      AsciiTraceHelper ascii;
-      wifiPhy.EnableAsciiAll (ascii.CreateFileStream ("reliability-example.tr"));
-      wifiPhy.EnablePcap ("reliability-example", allNodes);
-      // Trace routing tables
-      //Ptr<OutputStreamWrapper> routingStream = Create<OutputStreamWrapper> ("wifi-simple-adhoc-grid.routes", std::ios::out);
-      //olsr.PrintRoutingTableAllEvery (Seconds (2), routingStream);
-      //Ptr<OutputStreamWrapper> neighborStream = Create<OutputStreamWrapper> ("wifi-simple-adhoc-grid.neighbors", std::ios::out);
-      //olsr.PrintNeighborCacheAllEvery (Seconds (2), neighborStream);
-
-      // To do-- enable an IP-level trace that shows forwarding events only
-    }
+  {
+    AsciiTraceHelper ascii;
+    wifiPhy.EnableAsciiAll (ascii.CreateFileStream ("reliability-example.tr"));
+    wifiPhy.EnablePcap ("reliability-example", allNodes);
+  }
 
   /** simulation setup **/
   // Simulator::Stop (Years (simulationTime));
