@@ -45,12 +45,6 @@ PowerDistModel::GetTypeId (void)
     .SetParent<PowerModel> ()
     .SetGroupName ("Power")
     .AddConstructor<PowerDistModel> ()
-    .AddAttribute ("IdlePowerW",
-                   "Idle Power Consumption of Cpu in W",
-                   DoubleValue (2.8),    // default
-                   MakeDoubleAccessor (&PowerDistModel::SetIdlePowerW,
-                                       &PowerDistModel::GetIdlePowerW),
-                   MakeDoubleChecker<double> ())
     .AddAttribute ("TxPowerW",
                    "Transmission Power of WiFi Chip in W",
                    DoubleValue (0.22),    // default
