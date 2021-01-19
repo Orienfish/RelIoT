@@ -105,7 +105,7 @@ PrintInfo (Ptr<Node> node)
 std::string srFile = "dev.txt";     // Sensor location file
 std::string gwFile = "gw.txt";      // Gateway location file
 std::string flFile = "fl.txt";      // File of transmission distance at each node
-std::string distFile = "dist.txt";  // File of transmission distance at each node
+std::string ptxFile = "ptx.txt";    // File of transmission power at each node
 std::string tempFile = "temp.txt";  // Temperature traces at each sensor location
 
 
@@ -274,28 +274,27 @@ main (int argc, char *argv[])
   }
 
 
-  //////////////////////////
-  // Read distance matrix //
-  //////////////////////////
-  std::ifstream DistFile(distFile);
-  std::vector<double> dist; // flow matrix
-  if (DistFile.is_open())
+  /////////////////////////////////////
+  // Read ambient transmission power //
+  /////////////////////////////////////
+  std::ifstream PtxFile(ptxFile);
+  std::vector<double> ptxo; // flow matrix
+  if (PtxFile.is_open())
   {
     NS_LOG_DEBUG ("Read from existing distance file.");
     std::string line;
-    while (std::getline(FLFile, line)) {
+    while (std::getline(PtxFile, line)) {
         if (line.size() > 0) {
             std::vector < std::string > data = split(line, ' ');
-            dist.push_back(atof(data.at(0).c_str()));
+            ptxo.push_back(atof(data.at(0).c_str()));
         }
     }
   }
   else
   {
-    NS_LOG_ERROR ("Unable to open file " << distFile);
+    NS_LOG_ERROR ("Unable to open file " << ptxFile);
     return -1;
   }
-
 
   ////////////////////////
   // Wifi Configuration //
@@ -358,8 +357,8 @@ main (int argc, char *argv[])
       Ipv4Address sinkAddr = allNodesInterface.GetAddress(nDevices+nGateways-1);
       Ipv4Address nextHopAddr = allNodesInterface.GetAddress(j);
       staticRoutingNode->AddHostRouteTo (sinkAddr, nextHopAddr, 1);
-      sinkAddr.Print(std::cout);
-      nextHopAddr.Print(std::cout);
+      // sinkAddr.Print(std::cout);
+      // nextHopAddr.Print(std::cout);
     }
   }
 
@@ -388,7 +387,6 @@ main (int argc, char *argv[])
     }
   }
 
-
   ////////////////////////////////////////
   // Power, Temperature and Reliability //
   ////////////////////////////////////////
@@ -401,18 +399,23 @@ main (int argc, char *argv[])
   basicSourceHelper.Set ("BasicEnergySupplyVoltageV", DoubleValue (3.3));
   // Install source
   EnergySourceContainer energySources = basicSourceHelper.Install (sensorDevices);
+
+
   /* Reliability stack */
   ReliabilityHelper reliabilityHelper;
   // Configure the power, temperature and reliability model for each node
   for (int i = 0; i < nDevices; ++i)
   {
     Ptr<Node> nodei = sensorDevices.Get(i);
+    std::cout << P0 + SensorFlag[i] * Es / packetInterval << " "
+                 ptxo[i]  <<
+                 "\n";
     reliabilityHelper.SetDeviceType("Arduino");
     reliabilityHelper.SetPowerModel("ns3::PowerDistModel",
-      "IdlePower", DoubleValue (P0 + SensorFlag[i] * Es / packetInterval), 
-      "TxPowerW", DoubleValue(Pto + beta * pow(dist[i], alpha)),
+      "IdlePowerW", DoubleValue (P0 + SensorFlag[i] * Es / packetInterval), 
+      "TxPowerW", DoubleValue(P0 + SensorFlag[i] * Es / packetInterval + ptxo[i]),
       "TxDurationS", DoubleValue(packetSize / bw),
-      "RxPowerW", DoubleValue(Prx),
+      "RxPowerW", DoubleValue(P0 + SensorFlag[i] * Es / packetInterval + Prx),
       "RxDurationS", DoubleValue(packetSize / bw));
     reliabilityHelper.SetPerformanceModel("ns3::PerformanceSimpleModel");
     reliabilityHelper.SetTemperatureModel("ns3::TemperatureSimpleModel");
