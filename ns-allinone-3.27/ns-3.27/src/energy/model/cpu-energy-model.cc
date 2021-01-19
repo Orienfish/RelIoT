@@ -203,10 +203,10 @@ CpuEnergyModel::ChangeState (int newState)
       energyToDecrease = duration.GetSeconds () * m_idlePowerW;
       break;
     case WifiPhy::TX:
-      energyToDecrease = m_powerModel->GetTxDurationS() * m_powerModel->GetTxPowerW();
+      energyToDecrease = m_powerModel->GetDuration() * m_powerModel->GetPower();
       break;
     case WifiPhy::RX:
-      energyToDecrease = m_powerModel->GetRxDurationS() * m_powerModel->GetRxPowerW();
+      energyToDecrease = m_powerModel->GetDuration() * m_powerModel->GetPower();
       break;
     case WifiPhy::SWITCHING:
       energyToDecrease = duration.GetSeconds () * m_idlePowerW;
@@ -339,9 +339,9 @@ CpuEnergyModel::DoGetPower (void) const
     case WifiPhy::CCA_BUSY:
       return m_idlePowerW;
     case WifiPhy::TX:
-      return m_powerModel->GetTxPowerW();
+      return m_powerModel->GetPower();
     case WifiPhy::RX:
-      return m_powerModel->GetRxPowerW();
+      return m_powerModel->GetPower();
     case WifiPhy::SWITCHING:
       return m_idlePowerW;
     case WifiPhy::SLEEP:

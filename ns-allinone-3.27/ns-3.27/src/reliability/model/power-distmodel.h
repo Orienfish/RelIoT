@@ -15,8 +15,8 @@
  *
  */
 
-#ifndef POWER_LINEARMODEL_H
-#define POWER_LINEARMODEL_H
+#ifndef POWER_DISTMODEL_H
+#define POWER_DISTMODEL_H
 
 #include "ns3/nstime.h"
 #include "ns3/event-id.h"
@@ -24,8 +24,6 @@
 #include "ns3/temperature-model.h"
 #include <ns3/performance-model.h>
 #include "ns3/power-model.h"
-#include "ns3/wifi-phy.h"
-
 
 namespace ns3 {
 
@@ -62,13 +60,13 @@ public:
   //virtual void SetEnergySource (Ptr<EnergySource> source);
 
   // Setter & getters.
-  virtual double GetIdlePowerW (void) const;
-  virtual void SetIdlePowerW (double IdlePowerW);
   virtual double GetTxPowerW (void) const;
   virtual void SetTxPowerW (double TxPowerW);
   virtual double GetTxDurationS (void) const;
   virtual void SetTxDurationS (double TxDurationS);
   virtual double GetRxPowerW (void) const;
+  virtual void SetRxPowerW (double RxPowerW);
+  virtual double GetRxDurationS (void) const;
   virtual void SetRxDurationS (double RxDurationS);
   virtual double GetIdlePowerW (void) const;
   virtual void SetIdlePowerW (double IdlePowerW);
@@ -81,9 +79,14 @@ public:
   virtual double GetPower (void) const;
 
   /**
+   * \returns Current status's duration.
+   */
+  virtual double GetDuration (void) const;
+
+  /**
    * \returns Total energy to be consumed.
    */
-  virtual double GetEnergy (void) const;
+  //virtual double GetEnergy (void) const;
 
   /**
    * \brief Updates the power.
@@ -101,14 +104,16 @@ private:
   Ptr<PerformanceModel> m_performanceModel;
 
   // Member variables for current draw in different radio modes.
-  WifiPhy::State m_currentState;
+  int m_currentState;
   double m_idlePowerW;
   double m_txPowerW;
   double m_txDurationS;
   double m_rxPowerW;
-  double m_rxDurationsS;
-  // This variable keeps track of the total energy consumed by this model.
+  double m_rxDurationS;
+  // This variable keeps track of the current power.
   TracedValue<double> m_cpupower;
+    // This variable keeps track of the current duration.
+  TracedValue<double> m_duration;
   // State variables.
   EventId m_powerUpdateEvent;            // energy update event
   Time m_lastUpdateTime;          // time stamp of previous energy update

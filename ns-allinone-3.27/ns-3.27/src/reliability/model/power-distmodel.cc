@@ -21,8 +21,8 @@
 #include "ns3/simulator.h"
 #include "ns3/trace-source-accessor.h"
 #include "ns3/pointer.h"
-#include "ns3/wifi-phy.h"
-#include "ns3/power-linearmodel.h"
+#include "ns3/power-model.h"
+#include "ns3/power-distmodel.h"
 #include <ns3/performance-model.h>
 #include <iterator>
 #include <string>
@@ -78,12 +78,12 @@ PowerDistModel::GetTypeId (void)
     .AddAttribute ("IdlePowerW",
                    "Idle Power Consumption of Cpu",
                    DoubleValue (2.8),    // default
-                   MakeDoubleAccessor (&PowerLinearModel::SetIdlePowerW,
-                                       &PowerLinearModel::GetIdlePowerW),
+                   MakeDoubleAccessor (&PowerDistModel::SetIdlePowerW,
+                                       &PowerDistModel::GetIdlePowerW),
                    MakeDoubleChecker<double> ())
     .AddTraceSource ("CpuPower",
                      "CPU power consumption of the device.",
-                     MakeTraceSourceAccessor (&PowerLinearModel::m_cpupower),
+                     MakeTraceSourceAccessor (&PowerDistModel::m_cpupower),
                      "ns3::TracedValueCallback::Double")
   ; 
   return tid;
@@ -96,7 +96,7 @@ PowerDistModel::PowerDistModel ()
   m_powerUpdateInterval = Seconds (0.045);
   m_temperatureModel = NULL;      // TemperatureModel
   m_performanceModel = NULL;
-  m_currentState = WifiPhy::IDLE;
+  m_currentState = 0;
 }
 
 PowerDistModel::~PowerDistModel ()
@@ -122,6 +122,13 @@ PowerDistModel::GetPower (void) const
 {
   NS_LOG_FUNCTION (this);
   return m_cpupower;
+}
+
+double
+PowerDistModel::GetDuration (void) const
+{
+  NS_LOG_FUNCTION (this);
+  return m_duration;
 }
 
 void
@@ -195,24 +202,17 @@ PowerDistModel::GetRxDurationS (void) const
 }
 
 void
-PowerDistModel::SetState ((WifiPhy::State) state)
+PowerDistModel::SetState (int state)
 {
   NS_LOG_FUNCTION (this << state);
   m_currentState = state;
 }
 
-WifiPhy::State
+int
 PowerDistModel::GetState (void) const
 {
   NS_LOG_FUNCTION (this);
   return m_currentState;
-}
-
-double
-PowerDistModel::GetEnergy (void) const
-{
-  NS_LOG_FUNCTION (this);
-  return m_energy;
 }
 
 void
@@ -230,22 +230,26 @@ PowerDistModel::UpdatePower ()
   {
     case WifiPhy::IDLE:
       m_cpupower = m_idlePowerW;
+      m_duration = 0.0; // does not matter, will not be used
       break;
-    case WifiPhy::Tx:
+    case WifiPhy::TX:
       m_cpupower = m_txPowerW;
+      m_duration = m_txDurationS;
       break;
-    case WifiPhy:Rx:
+    case WifiPhy::RX:
       m_cpupower = m_rxPowerW;
+      m_duration = m_rxDurationS;
       break;
     default:
-      NS_FATAL_ERROR ("PowerDistModel:Undefined radio state: " << m_currentState);
+      m_cpupower = m_idlePowerW;
+      m_duration = 0.0; // does not matter, will not be used
   }
 
   // update last update time stamp
   m_lastUpdateTime = Simulator::Now ();
 
   m_temperatureModel->UpdateTemperature (m_cpupower);
-  m_powerUpdateEvent = Simulator::Schedule (m_powerUpdateInterval,&PowerLinearModel::UpdatePower,this);
+  m_powerUpdateEvent = Simulator::Schedule (m_powerUpdateInterval,&PowerDistModel::UpdatePower,this);
 }
 
 void

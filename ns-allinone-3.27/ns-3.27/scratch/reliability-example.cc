@@ -102,10 +102,11 @@ PrintInfo (Ptr<Node> node)
   }
 }
 
-std::string srlocFile = "dev_loc.txt"; // Sensor location file
-std::string gwlocFile = "gw_loc.txt"; // Gateway location file
-std::string flFile = "fl_mat.txt"; // Flow quantity file
-std::string tempFile = "temp.txt"; // Temperature traces at each sensor location
+std::string srFile = "dev.txt";     // Sensor location file
+std::string gwFile = "gw.txt";      // Gateway location file
+std::string flFile = "fl.txt";      // File of transmission distance at each node
+std::string distFile = "dist.txt";  // File of transmission distance at each node
+std::string tempFile = "temp.txt";  // Temperature traces at each sensor location
 
 
 int
@@ -175,7 +176,7 @@ main (int argc, char *argv[])
   Ptr<ListPositionAllocator> positionAllocEd = CreateObject<ListPositionAllocator> ();
 
   // Read end nodes' locations from text file
-  std::ifstream EdLocationFile(srlocFile);
+  std::ifstream EdLocationFile(srFile);
   std::vector<int> SensorFlag;       // Whether the node is a sensor node (1) or a relay node (0)
   if (EdLocationFile.is_open())
   {
@@ -197,7 +198,7 @@ main (int argc, char *argv[])
   }
   else
   {
-    NS_LOG_ERROR ("Unable to open file " << srlocFile);
+    NS_LOG_ERROR ("Unable to open file " << srFile);
     return -1;
   }
 
@@ -214,7 +215,7 @@ main (int argc, char *argv[])
   Ptr<ListPositionAllocator> positionAllocGw = CreateObject<ListPositionAllocator> ();
 
   // Read gateway locations from text file
-  std::ifstream GwLocationFile(gwlocFile);
+  std::ifstream GwLocationFile(gwFile);
   if (GwLocationFile.is_open())
   {
     NS_LOG_DEBUG ("Read from existing gw device location file.");
@@ -233,7 +234,7 @@ main (int argc, char *argv[])
   }
   else
   {
-    NS_LOG_ERROR ("Unable to open file " << gwlocFile);
+    NS_LOG_ERROR ("Unable to open file " << gwFile);
     return -1;
   }
 
@@ -241,7 +242,6 @@ main (int argc, char *argv[])
   mobilityGw.Install (gateways);
 
   NodeContainer allNodes = NodeContainer(sensorDevices, gateways);
-
 
   //////////////////////
   // Read flow matrix //
@@ -256,7 +256,7 @@ main (int argc, char *argv[])
     while (std::getline(FLFile, line)) {
         if (line.size() > 0) {
             std::vector < std::string > fijLine = split(line, ' ');
-
+            
             for (std::vector < std::string >::iterator it = fijLine.begin();
               it != fijLine.end(); ++it)
             {
@@ -274,10 +274,33 @@ main (int argc, char *argv[])
   }
 
 
+  //////////////////////////
+  // Read distance matrix //
+  //////////////////////////
+  std::ifstream DistFile(distFile);
+  std::vector<double> dist; // flow matrix
+  if (DistFile.is_open())
+  {
+    NS_LOG_DEBUG ("Read from existing distance file.");
+    std::string line;
+    while (std::getline(FLFile, line)) {
+        if (line.size() > 0) {
+            std::vector < std::string > data = split(line, ' ');
+            dist.push_back(atof(data.at(0).c_str()));
+        }
+    }
+  }
+  else
+  {
+    NS_LOG_ERROR ("Unable to open file " << distFile);
+    return -1;
+  }
+
+
   ////////////////////////
   // Wifi Configuration //
   ////////////////////////
-
+  WifiHelper wifi;
   if (verbose)
   {
     wifi.EnableLogComponents ();  // Turn on all Wifi logging
@@ -297,7 +320,6 @@ main (int argc, char *argv[])
   wifiPhy.SetChannel (wifiChannel.Create ());
 
   // Disable rate control
-  WifiHelper wifi;
   wifi.SetStandard (WIFI_PHY_STANDARD_80211b);
   wifi.SetRemoteStationManager ("ns3::ConstantRateWifiManager",
                                 "DataMode",StringValue (phyMode),
@@ -375,7 +397,7 @@ main (int argc, char *argv[])
   /* Energy source */
   BasicEnergySourceHelper basicSourceHelper;
   // Configure energy source
-  basicSourceHelper.Set ("BasicEnergySourceInitialEnergyJ", Double (BattJ));
+  basicSourceHelper.Set ("BasicEnergySourceInitialEnergyJ", DoubleValue (BattJ));
   basicSourceHelper.Set ("BasicEnergySupplyVoltageV", DoubleValue (3.3));
   // Install source
   EnergySourceContainer energySources = basicSourceHelper.Install (sensorDevices);
@@ -384,24 +406,24 @@ main (int argc, char *argv[])
   // Configure the power, temperature and reliability model for each node
   for (int i = 0; i < nDevices; ++i)
   {
-    nodei = sensorDevices.Get(i);
+    Ptr<Node> nodei = sensorDevices.Get(i);
     reliabilityHelper.SetDeviceType("Arduino");
     reliabilityHelper.SetPowerModel("ns3::PowerDistModel",
       "IdlePower", DoubleValue (P0 + SensorFlag[i] * Es / packetInterval), 
-      "TxPowerW", DoubleValue(Pto + beta * power(dist[i], alpha)),
+      "TxPowerW", DoubleValue(Pto + beta * pow(dist[i], alpha)),
       "TxDurationS", DoubleValue(packetSize / bw),
       "RxPowerW", DoubleValue(Prx),
       "RxDurationS", DoubleValue(packetSize / bw));
     reliabilityHelper.SetPerformanceModel("ns3::PerformanceSimpleModel");
     reliabilityHelper.SetTemperatureModel("ns3::TemperatureSimpleModel");
     reliabilityHelper.SetReliabilityModel("ns3::ReliabilityTDDBModel");
-    reliabilityHelper.SetApplication("AdaBoost",dataSize,packetSize);
+    // reliabilityHelper.SetApplication("AdaBoost",dataSize,packetSize);
     reliabilityHelper.Install(nodei);
   }
   
   /* cpu energy model */
   CpuEnergyModelHelper cpuEnergyHelper;
-  DeviceEnergyModelContainer deviceModels = cpuEnergyHelper.Install(sensorDevices, energySources);
+  DeviceEnergyModelContainer deviceModels = cpuEnergyHelper.Install(devicesNet, energySources);
 
   /***************************************************************************/
   if (tracing == true)

@@ -38,7 +38,12 @@ public:
   PowerModel ();
   virtual ~PowerModel ();
 
-
+  /**
+   * \param integer representing the upcoming state
+   *
+   * Set state
+   */
+  virtual void SetState (int state) = 0;
 
   /**
    * \returns State of the power model (idle/busy)
@@ -50,7 +55,7 @@ public:
   /**
    * \returns Energy consumed.
    */
-  virtual double GetEnergy (void) const = 0;
+  //virtual double GetEnergy (void) const = 0;
 
 
   /**
@@ -81,8 +86,8 @@ public:
    */
   void AppendDeviceEnergyModel (Ptr<DeviceEnergyModel> deviceEnergyModelPtr);
 
-  virtual void SetApplication(std::string n0, const DoubleValue &v0) = 0;
-  virtual void SetDeviceType(std::string devicetype) = 0;
+  //virtual void SetApplication(std::string n0, const DoubleValue &v0) = 0;
+  //virtual void SetDeviceType(std::string devicetype) = 0;
 
   //virtual void SetAppName (const std::string &appname) = 0;  
   //virtual void SetDataSize (double datasize) = 0;
@@ -91,6 +96,12 @@ public:
    * \returns Current Power.
    */
   virtual double GetPower (void) const;
+
+  /**
+   * \returns Current status's duration.
+   */
+  virtual double GetDuration (void) const;
+
 
   /**
    * Starts the application
