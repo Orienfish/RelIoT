@@ -98,7 +98,7 @@ PrintInfo (Ptr<Node> node)
 
   if (!Simulator::IsFinished ())
   {
-    Simulator::Schedule (Seconds (0.5),&PrintInfo,node);
+    Simulator::Schedule (Seconds (0.5), &PrintInfo,node);
   }
 }
 
@@ -407,9 +407,6 @@ main (int argc, char *argv[])
   for (int i = 0; i < nDevices; ++i)
   {
     Ptr<Node> nodei = sensorDevices.Get(i);
-    std::cout << P0 + SensorFlag[i] * Es / packetInterval << " "
-                 ptxo[i]  <<
-                 "\n";
     reliabilityHelper.SetDeviceType("Arduino");
     reliabilityHelper.SetPowerModel("ns3::PowerDistModel",
       "IdlePowerW", DoubleValue (P0 + SensorFlag[i] * Es / packetInterval), 
@@ -428,12 +425,21 @@ main (int argc, char *argv[])
   CpuEnergyModelHelper cpuEnergyHelper;
   DeviceEnergyModelContainer deviceModels = cpuEnergyHelper.Install(devicesNet, energySources);
 
-  /***************************************************************************/
+  /////////////
+  // Tracing //
+  /////////////
   if (tracing == true)
   {
     AsciiTraceHelper ascii;
     wifiPhy.EnableAsciiAll (ascii.CreateFileStream ("reliability-example.tr"));
     wifiPhy.EnablePcap ("reliability-example", allNodes);
+  }
+
+  // Configure the power, temperature and reliability model for each node
+  for (int i = 0; i < nDevices; ++i)
+  {
+    Ptr<Node> nodei = sensorDevices.Get(i);
+    PrintInfo(nodei);
   }
 
   /** simulation setup **/
