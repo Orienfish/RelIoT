@@ -52,6 +52,13 @@ PowerModel::GetPower (void) const
   return 2.8;
 }
 
+double 
+PowerModel::GetDuration (void) const
+{
+  NS_LOG_FUNCTION (this);
+  return 0.0;
+}
+
 void
 PowerModel::AppendDeviceEnergyModel (Ptr<DeviceEnergyModel> deviceEnergyModelPtr)
 {

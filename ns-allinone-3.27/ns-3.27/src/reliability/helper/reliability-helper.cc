@@ -221,10 +221,10 @@ ReliabilityHelper::Install (Ptr<Node> node)
     reliabilitymodel->RegisterTemperatureModel(temperaturemodel);
     powermodel->RegisterPerformanceModel(performancemodel);
     powermodel->RegisterTemperatureModel (temperaturemodel);
-    powermodel->SetDeviceType(m_deviceType);
+    //powermodel->SetDeviceType(m_deviceType);
     temperaturemodel->SetDeviceType(m_deviceType);
-    powermodel->SetApplication(m_appName,m_dataSize);
-    performancemodel->SetPacketSize(m_packetSize);
+    //powermodel->SetApplication(m_appName,m_dataSize);
+    //performancemodel->SetPacketSize(m_packetSize);
     // powermodel->SetAppName(m_appName);
     // powermodel->SetDataSize(m_dataSize);
 }
